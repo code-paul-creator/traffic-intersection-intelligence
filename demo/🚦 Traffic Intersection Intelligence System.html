@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<!-- saved from url=(0022)http://127.0.0.1:5000/ -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚦 Traffic Intersection Intelligence System</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com/">
+    <link rel="preconnect" href="https://fonts.gstatic.com/" crossorigin="">
+    <link href="./🚦 Traffic Intersection Intelligence System_files/css2" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="./🚦 Traffic Intersection Intelligence System_files/chart.js.download"></script>
+    <!-- CSS Stylesheet -->
+    <link rel="stylesheet" href="./🚦 Traffic Intersection Intelligence System_files/style.css">
+<link type="text/css" rel="stylesheet" href="chrome-extension://fdhgeoginicibhagdmblfikbgbkahibd/css/mcafee_fonts.css"></head>
+<body>
+    <div class="app-container">
+        <!-- Top Telemetry Header -->
+        <header class="app-header">
+            <div class="logo-area">
+                <span class="pulse-icon">🚦</span>
+                <h1>Traffic Intersection Intelligence</h1>
+                <span class="badge">AI Control Edition</span>
+            </div>
+            
+            <div class="global-controls">
+                <div class="control-group">
+                    <label for="city-select">City Profile</label>
+                    <select id="city-select"><option value="mumbai">Mumbai (Maharashtra)</option><option value="delhi">Delhi (Delhi (NCT))</option><option value="bangalore">Bangalore (Karnataka)</option><option value="chennai">Chennai (Tamil Nadu)</option><option value="pune">Pune (Maharashtra)</option><option value="generic_tier1">Generic Tier-1 Indian City (N/A)</option><option value="generic_tier2">Generic Tier-2 Indian City (N/A)</option></select>
+                </div>
+                
+                <div class="control-group">
+                    <label for="controller-select">Signal Controller</label>
+                    <select id="controller-select">
+                        <option value="fixed">Fixed-Timing (Baseline)</option>
+                        <option value="adaptive">Congestion-Adaptive (Heuristic)</option>
+                        <option value="rl">AI Reinforcement Learning (Q-Agent)</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="weather-select">Weather Condition</label>
+                    <select id="weather-select">
+                        <option value="sunny">☀️ Sunny &amp; Dry</option>
+                        <option value="rainy">🌧️ Rain (Wet Roads)</option>
+                        <option value="stormy">⛈️ Monsoon Storm</option>
+                        <option value="foggy">🌫️ Dense Fog</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="hour-slider">Simulation Start Hour: <span id="hour-val">17:30</span></label>
+                    <input type="range" id="hour-slider" min="0" max="23.5" step="0.5" value="8.5">
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Dashboard Layout -->
+        <div class="dashboard-grid">
+            
+            <!-- Left Panel: Interactive Simulation Canvas -->
+            <div class="panel canvas-panel">
+                <div class="panel-header">
+                    <h2>Live Intersection Visualizer</h2>
+                    <div class="canvas-actions">
+                        <button id="btn-play" class="btn btn-success">▶ Play</button>
+                        <button id="btn-pause" class="btn btn-warning" disabled="">⏸ Pause</button>
+                        <button id="btn-reset" class="btn btn-danger">🔄 Restart</button>
+                        
+                        <div class="speed-control">
+                            <label for="speed-range">Speed:</label>
+                            <input type="range" id="speed-range" min="1" max="10" value="2">
+                            <span id="speed-val">2x</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="canvas-container">
+                    <canvas id="traffic-canvas" width="600" height="600"></canvas>
+                    <div id="lane-density-overlays">
+                        <!-- Visual indicator overlays -->
+                    </div>
+                </div>
+                
+                <div class="interactive-spawner">
+                    <h3>Interactive Vehicle Spawner</h3>
+                    <div class="spawner-controls">
+                        <select id="spawn-dir">
+                            <option value="north">From North (Heading South)</option>
+                            <option value="south">From South (Heading North)</option>
+                            <option value="east">From East (Heading West)</option>
+                            <option value="west">From West (Heading East)</option>
+                        </select>
+                        
+                        <select id="spawn-lane">
+                            <option value="0">Lane 1 (Left / Straight)</option>
+                            <option value="1">Lane 2 (Right / Straight)</option>
+                        </select>
+                        
+                        <select id="spawn-type">
+                            <option value="car">🚙 Car</option>
+                            <option value="two_wheeler">🛵 Scooter/Bike</option>
+                            <option value="auto_rickshaw">🛺 Auto Rickshaw</option>
+                            <option value="bus">🚌 Bus</option>
+                            <option value="truck">🚚 Truck</option>
+                            <option value="cycle">🚲 Bicycle</option>
+                        </select>
+                        
+                        <button id="btn-spawn" class="btn btn-primary">Spawn Vehicle</button>
+                        <button id="btn-jam" class="btn btn-danger-glow">Trigger Traffic Jam</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Panel: Telemetry Metrics & Graphs -->
+            <div class="panel telemetry-panel">
+                <div class="panel-header">
+                    <h2>Performance Telemetry</h2>
+                    <span id="sim-clock" class="clock-display">14:01:18</span>
+                </div>
+                
+                <!-- KPI Card Grid -->
+                <div class="kpi-grid">
+                    <div class="kpi-card text-success">
+                        <span class="kpi-label">Vehicles Crossed</span>
+                        <span id="val-crossed" class="kpi-value">84</span>
+                        <span class="kpi-sub">Total Flow Rate</span>
+                    </div>
+                    <div class="kpi-card text-warning">
+                        <span class="kpi-label">Average Wait Time</span>
+                        <span id="val-wait" class="kpi-value">12.6s</span>
+                        <span class="kpi-sub">Per Vehicle Queue</span>
+                    </div>
+                    <div class="kpi-card text-danger">
+                        <span class="kpi-label">Signal Violations</span>
+                        <span id="val-violations" class="kpi-value">2</span>
+                        <span class="kpi-sub">Safety Compliance</span>
+                    </div>
+                    <div class="kpi-card text-info">
+                        <span class="kpi-label">Active Phase</span>
+                        <span id="val-phase" class="kpi-value">E-W</span>
+                        <span id="val-phase-sub" class="kpi-sub text-success">GREEN: 12s<br>MODE: ADAPTIVE</span>
+                    </div>
+                </div>
+
+                <!-- Live Charts Section -->
+                <div class="charts-section">
+                    <div class="chart-container">
+                        <h3>Queue Backlog per Approach (Vehicles)</h3>
+                        <canvas id="chart-queues" width="1763" height="210" style="display: block; box-sizing: border-box; height: 140px; width: 1175.3px;"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Completed Wait Time by Approach (Seconds)</h3>
+                        <canvas id="chart-waits" width="1763" height="210" style="display: block; box-sizing: border-box; height: 140px; width: 1175.3px;"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Side Panel: AI Controller Workspace & Advice -->
+            <div class="panel ai-panel">
+                <div class="panel-header">
+                    <h2>AI Control Hub &amp; Insights</h2>
+                </div>
+
+                <div class="ai-controls-wrapper">
+                    <!-- RL Training Console -->
+                    <div class="ai-box">
+                        <h3>RL Neural Training Console</h3>
+                        <p class="ai-desc">Train Q-Learning Agent offline to optimize green phase switching.</p>
+                        
+                        <div class="rl-train-actions">
+                            <label for="episodes-input">Episodes:</label>
+                            <input type="number" id="episodes-input" value="150" min="10" max="500">
+                            <button id="btn-train-rl" class="btn btn-primary-glow">⚡ Train AI Agent</button>
+                        </div>
+                        
+                        <div id="training-progress" class="training-progress-bar" style="display: none;">
+                            <div class="progress-bar-fill" style="width: 76.6738%;"></div>
+                            <span class="progress-text">Computing Policy Gradients: 76%</span>
+                        </div>
+
+                        <div class="rl-metrics">
+                            <div>Q-Table Size: <strong id="rl-qsize">0</strong> states</div>
+                            <div>Exploration Rate: <strong id="rl-epsilon">0.00</strong></div>
+                        </div>
+
+                        <div class="chart-container-mini">
+                            <canvas id="chart-training" width="1753" height="150" style="display: block; box-sizing: border-box; height: 100px; width: 1168.9px;"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- AI Traffic Advisor (LLM Chat Integration) -->
+                    <div class="ai-box chat-box">
+                        <h3>🤖 AI Traffic Advisor</h3>
+                        <p class="ai-desc">Intelligent congestion diagnostic reports and optimization advice.</p>
+                        
+                        <div id="chat-messages" class="chat-messages-container">
+                            <div class="chat-msg system">
+                                Welcome. Run the simulation and click the button below to generate an AI performance diagnostic report.
+                            </div>
+                        </div>
+                        
+                        <button id="btn-ai-advise" class="btn btn-success-glow" disabled="">📋 Request AI Performance Report</button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- JavaScript scripts -->
+    <script src="./🚦 Traffic Intersection Intelligence System_files/dashboard.js.download"></script>
+
+
+<span id="PING_CONTENT_DLS_POPUP" style="display: none;"></span><div style="background-color: transparent; border-width: medium; border-style: none; border-color: currentcolor; border-image: initial; bottom: 15px; display: block; margin: 0px; opacity: 1; padding: 0px; position: fixed; right: 15px; z-index: 2147483647;"><template shadowrootmode="closed"><style>/*!
+ * 
+ *     MCAFEE RESTRICTED CONFIDENTIAL
+ *     Copyright (c) 2026 McAfee, LLC
+ *
+ *     The source code contained or described herein and all documents related
+ *     to the source code ("Material") are owned by McAfee or its
+ *     suppliers or licensors. Title to the Material remains with McAfee
+ *     or its suppliers and licensors. The Material contains trade
+ *     secrets and proprietary and confidential information of McAfee or its
+ *     suppliers and licensors. The Material is protected by worldwide copyright
+ *     and trade secret laws and treaty provisions. No part of the Material may
+ *     be used, copied, reproduced, modified, published, uploaded, posted,
+ *     transmitted, distributed, or disclosed in any way without McAfee's prior
+ *     express written permission.
+ *
+ *     No license under any patent, copyright, trade secret or other intellectual
+ *     property right is granted to or conferred upon you by disclosure or
+ *     delivery of the Materials, either expressly, by implication, inducement,
+ *     estoppel or otherwise. Any license under such intellectual property rights
+ *     must be expressed and approved by McAfee in writing.
+ *
+ */
+@font-face{font-family:"McAfeePoppins";src:url("../../../fonts/Poppins-Thin.ttf") format("truetype");font-weight:100;font-style:normal}@font-face{font-family:"McAfeePoppins";src:url("../../../fonts/Poppins-ThinItalic.ttf") format("truetype");font-weight:100;font-style:italic}@font-face{font-family:"McAfeePoppins";src:url("../../../fonts/Poppins-ExtraLight.ttf") format("truetype");font-weight:200;font-style:normal}@font-face{font-family:"McAfeePoppins";src:url("../../../fonts/Poppins-ExtraLightItalic.ttf") format("truetype");font-weight:200;font-style:italic}@font-face{font-family:"McAfeePoppins";src:url("../../../fonts/Poppins-Light.ttf") format("truetype");font-weight:300;font-style:normal}@font-face{font-family:"McAfeePoppins";src:url("../../../fonts/Poppins-LightItalic.ttf") format("truetype");font-weight:300;font-style:italic}@font-face{font-family:"McAfeePoppins";src:url("../../../fonts/Poppins-Regular.ttf") format("truetype");font-weight:400;font-style:normal}@font-face{font-family:"McAfeePoppins";src:url("../../../fonts/Poppins-Italic.ttf") format("truetype");font-weight:400;font-style:italic}@font-face{font-family:"McAfeePoppins";src:url("../../../fonts/Poppins-Medium.ttf") format("truetype");font-weight:500;font-style:normal}@font-face{font-family:"McAfeePoppins";src:url("../../../fonts/Poppins-MediumItalic.ttf") format("truetype");font-weight:500;font-style:italic}@font-face{font-family:"McAfeePoppins";src:url("../../../fonts/Poppins-SemiBold.ttf") format("truetype");font-weight:600;font-style:normal}@font-face{font-family:"McAfeePoppins";src:url("../../../fonts/Poppins-SemiBoldItalic.ttf") format("truetype");font-weight:600;font-style:italic}@font-face{font-family:"McAfeePoppins";src:url("../../../fonts/Poppins-Bold.ttf") format("truetype");font-weight:700;font-style:normal}@font-face{font-family:"McAfeePoppins";src:url("../../../fonts/Poppins-BoldItalic.ttf") format("truetype");font-weight:700;font-style:italic}@font-face{font-family:"McAfeePoppins";src:url("../../../fonts/Poppins-ExtraBold.ttf") format("truetype");font-weight:800;font-style:normal}@font-face{font-family:"McAfeePoppins";src:url("../../../fonts/Poppins-ExtraBoldItalic.ttf") format("truetype");font-weight:800;font-style:italic}@font-face{font-family:"McAfeePoppins";src:url("../../../fonts/Poppins-Black.ttf") format("truetype");font-weight:900;font-style:normal}@font-face{font-family:"McAfeePoppins";src:url("../../../fonts/Poppins-BlackItalic.ttf") format("truetype");font-weight:900;font-style:italic}*{border:0;box-sizing:border-box;font:inherit;font-family:"McAfeePoppins",Helvetica,Arial;font-size:100%;margin:0;padding:0;vertical-align:baseline;outline:none}article,aside,details,figcaption,figure,footer,header,hgroup,menu,nav,section{display:block}html,body{background-color:#f5f6fa;font-family:"McAfeePoppins",Helvetica,Arial;line-height:1;height:100%;width:100%}ol,ul{list-style:none}blockquote,q{quotes:none}blockquote:after,blockquote:before,q:after,q:before{content:"";content:none}table{border-collapse:collapse;border-spacing:0}b{font-weight:bold}img{display:block}.dls__container{align-items:center;display:flex;margin:0 auto;margin-top:50px;position:relative}.dls__popup__expanded{align-items:center;overflow:hidden;border-radius:100px;cursor:pointer;display:flex;left:0;padding:15px;position:absolute;height:95px;width:383px;background-color:#fff;transition:all .3s ease-in-out}.dls__popup__expanded .dls__icon{height:65px;width:73px}.content{margin-left:12px}.content .content__images{display:flex;align-items:center;width:250px}.content .content__images .seperator__line{margin-left:5px;margin-right:10px}.content .content__images #dls_close_icon{cursor:pointer;margin-left:auto;margin-right:0px}.content p{font-family:"McAfeePoppins",Helvetica,Arial;font-weight:"400";font-size:14px;line-height:20px;margin-top:8px;color:#4258ff;width:250px;cursor:pointer}.shield{overflow:hidden;box-shadow:0px 2px 4px 0px rgba(33,41,52,.12),0px -1px 2px 0px rgba(0,0,0,.08);align-items:center;border-radius:100px;bottom:0;display:flex;height:95px;justify-content:center;position:absolute;right:0;width:383px;transition:all .3s ease-in-out}.shield__circle{display:flex;justify-content:center;align-items:center;width:55px;height:55px;background-color:#c01818;transition:all .6s ease-in-out .2s;z-index:1;opacity:0}
+
+/*# sourceMappingURL=../sourceMap/edge/css/download_scan_popup.css.map*/</style><div class="dls__container">
+  <div class="shield" style="background: transparent; opacity: 0.1; display: none;">
+    <div class="shield__circle" style="opacity: 1;">
+      <img src="chrome-extension://fdhgeoginicibhagdmblfikbgbkahibd/images/download_scan/mcafee_logo_white.svg?secret=l65pbg" x-mcsrc="" id="dls_ballon_icon" x-mcsrcparsed="true">
+    </div>
+    <div class="dls__popup__expanded" style="opacity: 0;">
+      <img src="chrome-extension://fdhgeoginicibhagdmblfikbgbkahibd/images/download_scan/download_scan_icon.svg?secret=l65pbg" x-mcsrc="" class="dls__icon" x-mcsrcparsed="true">
+      <div class="content">
+        <div class="content__images">
+          <img src="chrome-extension://fdhgeoginicibhagdmblfikbgbkahibd/images/download_scan/mcafee_logo_red.svg?secret=l65pbg" x-mcsrc="" id="dls_mcafee_logo" x-mcsrcparsed="true">
+          <img src="chrome-extension://fdhgeoginicibhagdmblfikbgbkahibd/images/download_scan/seperator_line.svg?secret=l65pbg" x-mcsrc="" class="seperator__line" x-mcsrcparsed="true">
+          <img src="chrome-extension://fdhgeoginicibhagdmblfikbgbkahibd/images/download_scan/webadvisor.svg?secret=l65pbg" x-mcsrc="" x-mcsrcparsed="true">
+          <img src="chrome-extension://fdhgeoginicibhagdmblfikbgbkahibd/images/download_scan/close-outline.svg?secret=l65pbg" x-mcsrc="" id="dls_close_icon" x-mcsrcparsed="true">
+        </div>
+        <p id="download_scan_popup_expanded_descriptions">Your download's being scanned. We'll let you know if there's an issue.</p>
+      </div>
+    </div>
+  </div>
+</div><style>/*!
+ * 
+ *     MCAFEE RESTRICTED CONFIDENTIAL
+ *     Copyright (c) 2026 McAfee, LLC
+ *
+ *     The source code contained or described herein and all documents related
+ *     to the source code ("Material") are owned by McAfee or its
+ *     suppliers or licensors. Title to the Material remains with McAfee
+ *     or its suppliers and licensors. The Material contains trade
+ *     secrets and proprietary and confidential information of McAfee or its
+ *     suppliers and licensors. The Material is protected by worldwide copyright
+ *     and trade secret laws and treaty provisions. No part of the Material may
+ *     be used, copied, reproduced, modified, published, uploaded, posted,
+ *     transmitted, distributed, or disclosed in any way without McAfee's prior
+ *     express written permission.
+ *
+ *     No license under any patent, copyright, trade secret or other intellectual
+ *     property right is granted to or conferred upon you by disclosure or
+ *     delivery of the Materials, either expressly, by implication, inducement,
+ *     estoppel or otherwise. Any license under such intellectual property rights
+ *     must be expressed and approved by McAfee in writing.
+ *
+ */
+.mc-interactive-balloon{position:absolute;right:-50px;bottom:8px;box-shadow:rgba(0,0,0,.12) 0px 0px 10px;height:40px;width:40px;background:#1671ee;border-radius:20px;display:flex;justify-content:center;align-items:center}
+
+/*# sourceMappingURL=../sourceMap/edge/css/interactive_balloon.css.map*/</style></template></div></body></html>
