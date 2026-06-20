@@ -1,0 +1,831 @@
+// Simulation & Visualization State
+let isPlaying = false;
+let speedMultiplier = 2;
+let stepInterval = null;
+let currentTelemetry = null;
+let cities = [];
+
+// Chart references
+let chartQueues = null;
+let chartWaits = null;
+let chartTraining = null;
+
+// Canvas Drawing Config
+const canvas = document.getElementById('traffic-canvas');
+const ctx = canvas.getContext('2d');
+const center = { x: 300, y: 300 };
+const roadWidth = 120; // 60px each side of center
+const laneWidth = 30;
+const stopLineOffset = 60; // stop line distance from center
+
+// Active vehicles animations
+let vehiclesCache = {}; // id -> vehicle details for interpolation
+let activeAnimations = []; // vehicles crossing the intersection
+
+// Color Profiles
+const colors = {
+    car: '#3b82f6',         // Blue
+    two_wheeler: '#f97316', // Orange
+    auto_rickshaw: '#f59e0b',// Yellow
+    bus: '#ef4444',         // Red
+    truck: '#8b5cf6',       // Purple
+    cycle: '#10b981',       // Green
+    bgRoad: '#1e293b',
+    laneMarking: '#475569',
+    roadBorder: '#334155'
+};
+
+// Vehicle Type labels
+const vehicleLabels = {
+    car: '🚙',
+    two_wheeler: '🛵',
+    auto_rickshaw: '🛺',
+    bus: '🚌',
+    truck: '🚚',
+    cycle: '🚲'
+};
+
+// -------------------------------------------------------------
+// Initialization
+// -------------------------------------------------------------
+document.addEventListener('DOMContentLoaded', () => {
+    initCharts();
+    loadCities();
+    
+    // Bind Event Listeners
+    document.getElementById('btn-play').addEventListener('click', startSimLoop);
+    document.getElementById('btn-pause').addEventListener('click', pauseSimLoop);
+    document.getElementById('btn-reset').addEventListener('click', resetSimulation);
+    document.getElementById('btn-spawn').addEventListener('click', spawnVehicle);
+    document.getElementById('btn-jam').addEventListener('click', triggerTrafficJam);
+    document.getElementById('btn-train-rl').addEventListener('click', trainRLAgent);
+    document.getElementById('btn-ai-advise').addEventListener('click', getAIRecommendation);
+    
+    document.getElementById('city-select').addEventListener('change', () => {
+        resetSimulation();
+        updateTomTomCurveChart();
+    });
+    document.getElementById('controller-select').addEventListener('change', resetSimulation);
+    document.getElementById('weather-select').addEventListener('change', () => {
+        if (currentTelemetry) {
+            // Hot swap weather in running simulation
+            const weather = document.getElementById('weather-select').value;
+            fetch('/api/simulation/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    city: document.getElementById('city-select').value,
+                    controller: document.getElementById('controller-select').value,
+                    asymmetric: document.getElementById('hour-slider').value > 12, // example toggle
+                    start_hour: currentTelemetry.hour_of_day,
+                    weather: weather
+                })
+            }).then(() => console.log('Weather changed to:', weather));
+        } else {
+            resetSimulation();
+        }
+    });
+
+    const hrSlider = document.getElementById('hour-slider');
+    const hrVal = document.getElementById('hour-val');
+    hrSlider.addEventListener('input', () => {
+        const hrs = parseFloat(hrSlider.value);
+        const padHour = Math.floor(hrs).toString().padStart(2, '0');
+        const padMin = ((hrs % 1) * 60).toString().padStart(2, '0');
+        hrVal.textContent = `${padHour}:${padMin}`;
+    });
+    hrSlider.addEventListener('change', resetSimulation);
+
+    const speedRange = document.getElementById('speed-range');
+    const speedVal = document.getElementById('speed-val');
+    speedRange.addEventListener('input', () => {
+        speedMultiplier = parseInt(speedRange.value);
+        speedVal.textContent = `${speedMultiplier}x`;
+        if (isPlaying) {
+            clearInterval(stepInterval);
+            stepInterval = setInterval(stepSimulation, 1000 / speedMultiplier);
+        }
+    });
+
+    // Start canvas animation frames loop
+    requestAnimationFrame(renderLoop);
+});
+
+// -------------------------------------------------------------
+// API Integration
+// -------------------------------------------------------------
+async function loadCities() {
+    const res = await fetch('/api/cities');
+    cities = await res.json();
+    const select = document.getElementById('city-select');
+    select.innerHTML = '';
+    cities.forEach(city => {
+        const opt = document.createElement('option');
+        opt.value = city.key;
+        opt.textContent = `${city.name} (${city.state})`;
+        select.appendChild(opt);
+    });
+    
+    // Trigger initial simulation startup
+    resetSimulation();
+}
+
+async function resetSimulation() {
+    const city = document.getElementById('city-select').value;
+    const controller = document.getElementById('controller-select').value;
+    const weather = document.getElementById('weather-select').value;
+    const hour = parseFloat(document.getElementById('hour-slider').value);
+    
+    const res = await fetch('/api/simulation/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            city: city,
+            controller: controller,
+            start_hour: hour,
+            weather: weather,
+            asymmetric: false
+        })
+    });
+    
+    const data = await res.json();
+    currentTelemetry = data.state;
+    vehiclesCache = {};
+    activeAnimations = [];
+    
+    updateTelemetryUI(currentTelemetry);
+    updateTelemetryCharts(currentTelemetry);
+}
+
+function startSimLoop() {
+    if (isPlaying) return;
+    isPlaying = true;
+    document.getElementById('btn-play').disabled = true;
+    document.getElementById('btn-pause').disabled = false;
+    stepInterval = setInterval(stepSimulation, 1000 / speedMultiplier);
+}
+
+function pauseSimLoop() {
+    if (!isPlaying) return;
+    isPlaying = false;
+    document.getElementById('btn-play').disabled = false;
+    document.getElementById('btn-pause').disabled = true;
+    clearInterval(stepInterval);
+}
+
+async function stepSimulation() {
+    if (!currentTelemetry) return;
+    
+    try {
+        const res = await fetch('/api/simulation/step?ticks=1');
+        const data = await res.json();
+        
+        // Find vehicles that just crossed to animate them
+        processCrossingVehicles(currentTelemetry.vehicles, data.vehicles);
+        
+        currentTelemetry = data;
+        updateTelemetryUI(currentTelemetry);
+        updateTelemetryCharts(currentTelemetry);
+    } catch (e) {
+        console.error("Step error", e);
+        pauseSimLoop();
+    }
+}
+
+async function spawnVehicle() {
+    const dir = document.getElementById('spawn-dir').value;
+    const lane = parseInt(document.getElementById('spawn-lane').value);
+    const type = document.getElementById('spawn-type').value;
+    
+    const res = await fetch('/api/simulation/spawn', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            direction: dir,
+            lane: lane,
+            type: type
+        })
+    });
+    const data = await res.json();
+    if (data.error) {
+        alert(data.error);
+    } else {
+        stepSimulation(); // step to show vehicle immediately
+    }
+}
+
+async function triggerTrafficJam() {
+    const dir = document.getElementById('spawn-dir').value;
+    // Spawn 8 vehicles rapidly to create a back-up
+    for (let i = 0; i < 8; i++) {
+        await fetch('/api/simulation/spawn', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                direction: dir,
+                lane: i % 2,
+                type: ['car', 'bus', 'auto_rickshaw', 'two_wheeler'][i % 4]
+            })
+        });
+    }
+    stepSimulation();
+}
+
+async function trainRLAgent() {
+    const btn = document.getElementById('btn-train-rl');
+    const progressBar = document.getElementById('training-progress');
+    const progressFill = progressBar.querySelector('.progress-bar-fill');
+    const progressText = progressBar.querySelector('.progress-text');
+    const city = document.getElementById('city-select').value;
+    const episodes = parseInt(document.getElementById('episodes-input').value) || 150;
+    
+    btn.disabled = true;
+    progressBar.style.display = 'block';
+    progressFill.style.width = '0%';
+    progressText.textContent = 'Contacting GPU Brain Simulator...';
+    
+    // Simulate training progress bar (while backend computes in under a second)
+    let percent = 0;
+    const progressTimer = setInterval(() => {
+        percent = Math.min(95, percent + Math.random() * 8);
+        progressFill.style.width = `${percent}%`;
+        progressText.textContent = `Computing Policy Gradients: ${Math.floor(percent)}%`;
+    }, 100);
+
+    try {
+        const res = await fetch('/api/rl/train', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ city: city, episodes: episodes })
+        });
+        const data = await res.json();
+        
+        clearInterval(progressTimer);
+        progressFill.style.width = '100%';
+        progressText.textContent = 'AI Trained successfully!';
+        
+        setTimeout(() => {
+            progressBar.style.display = 'none';
+            btn.disabled = false;
+        }, 1500);
+
+        // Update RL UI Stats
+        document.getElementById('rl-qsize').textContent = data.q_table_size;
+        document.getElementById('rl-epsilon').textContent = data.history[data.history.length - 1].epsilon;
+        
+        // Plot rewards convergence
+        const labels = data.history.map(h => h.episode);
+        const rewards = data.history.map(h => h.reward);
+        
+        updateTrainingChart(labels, rewards);
+        
+        // Suggest switching to RL controller
+        const chat = document.getElementById('chat-messages');
+        chat.innerHTML += `
+            <div class="chat-msg system">
+                <strong>RL Agent Notification</strong>: The Reinforcement Learning agent has finished training for <strong>${data.episodes_run} episodes</strong> (${data.q_table_size} state vectors mapped). Select "AI Reinforcement Learning" in the top bar to evaluate its performance.
+            </div>
+        `;
+        chat.scrollTop = chat.scrollHeight;
+
+    } catch (e) {
+        clearInterval(progressTimer);
+        progressBar.style.display = 'none';
+        btn.disabled = false;
+        alert("RL training failed.");
+    }
+}
+
+async function getAIRecommendation() {
+    if (!currentTelemetry) return;
+    
+    const btn = document.getElementById('btn-ai-advise');
+    btn.disabled = true;
+    
+    const res = await fetch('/api/ai-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            metrics: {
+                city: document.getElementById('city-select').options[document.getElementById('city-select').selectedIndex].text,
+                controller: document.getElementById('controller-select').value,
+                total_crossed: currentTelemetry.total_crossed,
+                total_violations: currentTelemetry.total_violations,
+                avg_wait_time_s: currentTelemetry.avg_wait_time_s,
+                lane_queues: currentTelemetry.lane_queues
+            }
+        })
+    });
+    const data = await res.json();
+    
+    // Add msg to chat
+    const chat = document.getElementById('chat-messages');
+    chat.innerHTML += `
+        <div class="chat-msg ai">
+            <h4>📋 Telemetry Diagnosis</h4>
+            <p>${data.response.replace(/\n/g, '<br>')}</p>
+        </div>
+    `;
+    chat.scrollTop = chat.scrollHeight;
+    btn.disabled = false;
+}
+
+// -------------------------------------------------------------
+// Rendering & Animations
+// -------------------------------------------------------------
+function processCrossingVehicles(oldVehicles, newVehicles) {
+    if (!oldVehicles) return;
+    
+    const newIds = new Set(newVehicles.map(v => v.id));
+    
+    oldVehicles.forEach(oldV => {
+        // If a vehicle was near the intersection and is no longer in the queue, it crossed!
+        if (!newIds.has(oldV.id) && oldV.position_m <= 15.0) {
+            // Add to active crossing animations
+            let startX, startY, vx = 0, vy = 0;
+            const screenSpeed = (oldV.speed_kmh * 0.1); // speed mapping
+            
+            // Map start pixel coordinate at stop line
+            if (oldV.direction === 'north') {
+                startX = oldV.lane === 0 ? 255 : 285;
+                startY = 240;
+                vy = screenSpeed;
+                if (oldV.turn_intent === 'left') { vx = screenSpeed; vy = screenSpeed * 0.2; }
+                if (oldV.turn_intent === 'right') { vx = -screenSpeed; vy = screenSpeed * 0.2; }
+            } else if (oldV.direction === 'south') {
+                startX = oldV.lane === 0 ? 345 : 315;
+                startY = 360;
+                vy = -screenSpeed;
+                if (oldV.turn_intent === 'left') { vx = -screenSpeed; vy = -screenSpeed * 0.2; }
+                if (oldV.turn_intent === 'right') { vx = screenSpeed; vy = -screenSpeed * 0.2; }
+            } else if (oldV.direction === 'east') {
+                startX = 360;
+                startY = oldV.lane === 0 ? 255 : 285;
+                vx = -screenSpeed;
+                if (oldV.turn_intent === 'left') { vy = screenSpeed; vx = -screenSpeed * 0.2; }
+                if (oldV.turn_intent === 'right') { vy = -screenSpeed; vx = -screenSpeed * 0.2; }
+            } else if (oldV.direction === 'west') {
+                startX = 240;
+                startY = oldV.lane === 0 ? 345 : 315;
+                vx = screenSpeed;
+                if (oldV.turn_intent === 'left') { vy = -screenSpeed; vx = screenSpeed * 0.2; }
+                if (oldV.turn_intent === 'right') { vy = screenSpeed; vx = screenSpeed * 0.2; }
+            }
+            
+            activeAnimations.push({
+                id: oldV.id,
+                type: oldV.type,
+                x: startX,
+                y: startY,
+                vx: vx,
+                vy: vy,
+                turn: oldV.turn_intent,
+                opacity: 1.0
+            });
+        }
+    });
+}
+
+function renderLoop() {
+    // 1. Clear Canvas
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    // 2. Draw Road Geometry
+    drawRoads();
+    
+    // 3. Draw Vehicles & Signals
+    if (currentTelemetry) {
+        drawTrafficSignals(currentTelemetry.signal_state);
+        drawQueuedVehicles(currentTelemetry.vehicles);
+    }
+    
+    // 4. Update and Draw Crossing Vehicles (Animations)
+    animateCrossingVehicles();
+    
+    requestAnimationFrame(renderLoop);
+}
+
+function drawRoads() {
+    ctx.fillStyle = colors.bgRoad;
+    
+    // Draw horizontal road
+    ctx.fillRect(0, center.y - roadWidth/2, canvas.width, roadWidth);
+    // Draw vertical road
+    ctx.fillRect(center.x - roadWidth/2, 0, roadWidth, canvas.height);
+    
+    // Road borders (curbs)
+    ctx.strokeStyle = colors.roadBorder;
+    ctx.lineWidth = 4;
+    
+    // Top-left curb
+    ctx.beginPath();
+    ctx.moveTo(0, center.y - roadWidth/2);
+    ctx.lineTo(center.x - roadWidth/2, center.y - roadWidth/2);
+    ctx.lineTo(center.x - roadWidth/2, 0);
+    ctx.stroke();
+    
+    // Top-right curb
+    ctx.beginPath();
+    ctx.moveTo(canvas.width, center.y - roadWidth/2);
+    ctx.lineTo(center.x + roadWidth/2, center.y - roadWidth/2);
+    ctx.lineTo(center.x + roadWidth/2, 0);
+    ctx.stroke();
+    
+    // Bottom-left curb
+    ctx.beginPath();
+    ctx.moveTo(0, center.y + roadWidth/2);
+    ctx.lineTo(center.x - roadWidth/2, center.y + roadWidth/2);
+    ctx.lineTo(center.x - roadWidth/2, canvas.height);
+    ctx.stroke();
+    
+    // Bottom-right curb
+    ctx.beginPath();
+    ctx.moveTo(canvas.width, center.y + roadWidth/2);
+    ctx.lineTo(center.x + roadWidth/2, center.y + roadWidth/2);
+    ctx.lineTo(center.x + roadWidth/2, canvas.height);
+    ctx.stroke();
+
+    // Draw Lane Markings (Dashed lines)
+    ctx.strokeStyle = colors.laneMarking;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([8, 12]);
+    
+    // Horizontal central divider (solid yellow double line equivalent)
+    ctx.beginPath();
+    ctx.moveTo(0, center.y);
+    ctx.lineTo(center.x - roadWidth/2, center.y);
+    ctx.moveTo(center.x + roadWidth/2, center.y);
+    ctx.lineTo(canvas.width, center.y);
+    ctx.moveTo(center.x, 0);
+    ctx.lineTo(center.x, center.y - roadWidth/2);
+    ctx.moveTo(center.x, center.y + roadWidth/2);
+    ctx.lineTo(center.x, canvas.height);
+    ctx.stroke();
+    
+    // Dashed lane separators
+    ctx.beginPath();
+    // Northbound/Southbound lanes
+    ctx.moveTo(center.x - laneWidth, 0);
+    ctx.lineTo(center.x - laneWidth, center.y - roadWidth/2);
+    ctx.moveTo(center.x + laneWidth, 0);
+    ctx.lineTo(center.x + laneWidth, center.y - roadWidth/2);
+    ctx.moveTo(center.x - laneWidth, center.y + roadWidth/2);
+    ctx.lineTo(center.x - laneWidth, canvas.height);
+    ctx.moveTo(center.x + laneWidth, center.y + roadWidth/2);
+    ctx.lineTo(center.x + laneWidth, canvas.height);
+    
+    // Eastbound/Westbound lanes
+    ctx.moveTo(0, center.y - laneWidth);
+    ctx.lineTo(center.x - roadWidth/2, center.y - laneWidth);
+    ctx.moveTo(0, center.y + laneWidth);
+    ctx.lineTo(center.x - roadWidth/2, center.y + laneWidth);
+    ctx.moveTo(center.x + roadWidth/2, center.y - laneWidth);
+    ctx.lineTo(canvas.width, center.y - laneWidth);
+    ctx.moveTo(center.x + roadWidth/2, center.y + laneWidth);
+    ctx.lineTo(canvas.width, center.y + laneWidth);
+    ctx.stroke();
+    ctx.setLineDash([]); // Reset line dash
+
+    // Zebra Crossings (Stripes)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+    const zebraLength = 15;
+    const stripeWidth = 6;
+    const stripeGap = 6;
+
+    // Draw zebra helper function
+    const drawZebra = (xStart, yStart, xEnd, yEnd, isVertical) => {
+        if (isVertical) {
+            for (let y = yStart; y < yEnd; y += stripeWidth + stripeGap) {
+                ctx.fillRect(xStart, y, zebraLength, stripeWidth);
+            }
+        } else {
+            for (let x = xStart; x < xEnd; x += stripeWidth + stripeGap) {
+                ctx.fillRect(x, yStart, stripeWidth, zebraLength);
+            }
+        }
+    };
+
+    // North Crossing
+    drawZebra(center.x - roadWidth/2 + 5, center.y - roadWidth/2 - 25, center.x + roadWidth/2 - 5, 0, false);
+    // South Crossing
+    drawZebra(center.x - roadWidth/2 + 5, center.y + roadWidth/2 + 10, center.x + roadWidth/2 - 5, 0, false);
+    // East Crossing
+    drawZebra(center.x + roadWidth/2 + 10, center.y - roadWidth/2 + 5, 0, center.y + roadWidth/2 - 5, true);
+    // West Crossing
+    drawZebra(center.x - roadWidth/2 - 25, center.y - roadWidth/2 + 5, 0, center.y + roadWidth/2 - 5, true);
+
+    // Stop Lines
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 3;
+    
+    // North (Southbound) stop line
+    ctx.beginPath(); ctx.moveTo(center.x - roadWidth/2, center.y - roadWidth/2); ctx.lineTo(center.x, center.y - roadWidth/2); ctx.stroke();
+    // South (Northbound) stop line
+    ctx.beginPath(); ctx.moveTo(center.x, center.y + roadWidth/2); ctx.lineTo(center.x + roadWidth/2, center.y + roadWidth/2); ctx.stroke();
+    // East (Westbound) stop line
+    ctx.beginPath(); ctx.moveTo(center.x + roadWidth/2, center.y - roadWidth/2); ctx.lineTo(center.x + roadWidth/2, center.y); ctx.stroke();
+    // West (Eastbound) stop line
+    ctx.beginPath(); ctx.moveTo(center.x - roadWidth/2, center.y); ctx.lineTo(center.x - roadWidth/2, center.y + roadWidth/2); ctx.stroke();
+}
+
+function drawTrafficSignals(signalStates) {
+    if (!signalStates) return;
+
+    // Signal lights coordinate positions
+    const lights = {
+        north: { x: center.x - roadWidth/2 - 15, y: center.y - roadWidth/2 - 15, state: signalStates.north },
+        south: { x: center.x + roadWidth/2 + 15, y: center.y + roadWidth/2 + 15, state: signalStates.south },
+        east: { x: center.x + roadWidth/2 + 15, y: center.y - roadWidth/2 - 15, state: signalStates.east },
+        west: { x: center.x - roadWidth/2 - 15, y: center.y + roadWidth/2 + 15, state: signalStates.west }
+    };
+
+    Object.entries(lights).forEach(([dir, light]) => {
+        // Draw signal post box
+        ctx.fillStyle = '#0f172a';
+        ctx.strokeStyle = '#475569';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(light.x, light.y, 10, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Draw colored bulb with radial glow
+        let color = '#ef4444';
+        let glow = 'rgba(239, 68, 68, 0.4)';
+        if (light.state === 'green') {
+            color = '#10b981';
+            glow = 'rgba(16, 185, 129, 0.4)';
+        } else if (light.state === 'yellow') {
+            color = '#f59e0b';
+            glow = 'rgba(245, 158, 11, 0.4)';
+        }
+
+        // Draw glow halo
+        const gradient = ctx.createRadialGradient(light.x, light.y, 2, light.x, light.y, 12);
+        gradient.addColorStop(0, color);
+        gradient.addColorStop(0.4, color);
+        gradient.addColorStop(1, 'transparent');
+        
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(light.x, light.y, 12, 0, Math.PI * 2);
+        ctx.fill();
+    });
+}
+
+function drawQueuedVehicles(vehicles) {
+    if (!vehicles) return;
+
+    vehicles.forEach(v => {
+        let x, y, width, height, angle = 0;
+        
+        // Map 150m road capacity to 240px screen road length
+        const roadLengthPx = 240;
+        const screenPos = (v.position_m / 150.0) * roadLengthPx;
+        
+        // Dimensions based on type
+        let vLen = 14;
+        let vWidth = 10;
+        if (v.type === 'bus') { vLen = 28; vWidth = 12; }
+        if (v.type === 'truck') { vLen = 24; vWidth = 12; }
+        if (v.type === 'two_wheeler') { vLen = 8; vWidth = 6; }
+        if (v.type === 'auto_rickshaw') { vLen = 11; vWidth = 9; }
+        if (v.type === 'cycle') { vLen = 6; vWidth = 4; }
+
+        // Compute coordinates based on approach direction & lane (left hand drive)
+        if (v.direction === 'north') { // Travel South (downward)
+            x = v.lane === 0 ? 255 : 285;
+            y = center.y - stopLineOffset - screenPos;
+            width = vWidth;
+            height = vLen;
+            angle = Math.PI; // Heading down
+        } else if (v.direction === 'south') { // Travel North (upward)
+            x = v.lane === 0 ? 345 : 315;
+            y = center.y + stopLineOffset + screenPos;
+            width = vWidth;
+            height = vLen;
+            angle = 0; // Heading up
+        } else if (v.direction === 'east') { // Travel West (leftward)
+            x = center.x + stopLineOffset + screenPos;
+            y = v.lane === 0 ? 255 : 285;
+            width = vLen;
+            height = vWidth;
+            angle = -Math.PI/2; // Heading left
+        } else if (v.direction === 'west') { // Travel East (rightward)
+            x = center.x - stopLineOffset - screenPos;
+            y = v.lane === 0 ? 345 : 315;
+            width = vLen;
+            height = vWidth;
+            angle = Math.PI/2; // Heading right
+        }
+
+        // Draw the vehicle body
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle);
+        
+        // Body color
+        ctx.fillStyle = colors[v.type] || colors.car;
+        
+        // Draw rounded rectangle for vehicle
+        ctx.beginPath();
+        ctx.roundRect(-width/2, -height/2, width, height, 3);
+        ctx.fill();
+        
+        // Draw windows/headlights for wow factor details
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+        if (v.type === 'bus' || v.type === 'car' || v.type === 'truck') {
+            // windshield
+            ctx.fillRect(-width/2 + 1.5, -height/2 + 2, width - 3, 3);
+        }
+        
+        // Red glow outline if violating signal
+        if (v.is_violating) {
+            ctx.strokeStyle = '#ef4444';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
+        
+        ctx.restore();
+    });
+}
+
+function animateCrossingVehicles() {
+    activeAnimations.forEach((v, idx) => {
+        // Move vehicle
+        v.x += v.vx;
+        v.y += v.vy;
+        
+        // Dimensions
+        let size = 12;
+        if (v.type === 'bus' || v.type === 'truck') size = 20;
+        
+        // Render crossing vehicle
+        ctx.save();
+        ctx.fillStyle = colors[v.type] || colors.car;
+        ctx.globalAlpha = v.opacity;
+        ctx.beginPath();
+        ctx.arc(v.x, v.y, size/2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Print vehicle emoji overlay (wow factor details!)
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '10px sans-serif';
+        ctx.fillText(vehicleLabels[v.type] || '🚙', v.x - 6, v.y + 4);
+        
+        ctx.restore();
+        
+        // Decay opacity as it goes away
+        v.opacity -= 0.02;
+        
+        // Delete if faded out or far off-screen
+        if (v.opacity <= 0 || v.x < 0 || v.x > canvas.width || v.y < 0 || v.y > canvas.height) {
+            activeAnimations.splice(idx, 1);
+        }
+    });
+}
+
+// -------------------------------------------------------------
+// Telemetry UI & Charts Updating
+// -------------------------------------------------------------
+function updateTelemetryUI(state) {
+    if (!state) return;
+    
+    document.getElementById('val-crossed').textContent = state.total_crossed;
+    document.getElementById('val-wait').textContent = `${state.avg_wait_time_s}s`;
+    document.getElementById('val-violations').textContent = state.total_violations;
+    
+    // Formatting Phase wait clock
+    const phaseStr = state.signal_status.active_phase === 'north_south' ? 'N-S' : 'E-W';
+    document.getElementById('val-phase').textContent = phaseStr;
+    
+    const subStateColor = state.signal_status.sub_state === 'green' ? 'text-success' : (state.signal_status.sub_state === 'yellow' ? 'text-warning' : 'text-danger');
+    const controllerMode = document.getElementById('controller-select').value.toUpperCase();
+    document.getElementById('val-phase-sub').className = `kpi-sub ${subStateColor}`;
+    document.getElementById('val-phase-sub').innerHTML = `${state.signal_status.sub_state.toUpperCase()}: ${state.signal_status.elapsed_in_phase_s}s<br>MODE: ${controllerMode}`;
+
+    // Clock
+    const totalSecs = Math.floor(state.sim_time_s);
+    const hrs = Math.floor(totalSecs / 3600) % 24;
+    const mins = Math.floor((totalSecs % 3600) / 60);
+    const secs = totalSecs % 60;
+    document.getElementById('sim-clock').textContent = 
+        `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+function initCharts() {
+    // Queues Chart
+    const ctxQ = document.getElementById('chart-queues').getContext('2d');
+    chartQueues = new Chart(ctxQ, {
+        type: 'bar',
+        data: {
+            labels: ['North (S-Bound)', 'South (N-Bound)', 'East (W-Bound)', 'West (E-Bound)'],
+            datasets: [{
+                label: 'Queue Length',
+                data: [0, 0, 0, 0],
+                backgroundColor: ['#f97316', '#3b82f6', '#8b5cf6', '#10b981'],
+                borderWidth: 0,
+                borderRadius: 4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#9ca3af' } },
+                x: { ticks: { color: '#9ca3af' } }
+            }
+        }
+    });
+
+    // Waits Chart
+    const ctxW = document.getElementById('chart-waits').getContext('2d');
+    chartWaits = new Chart(ctxW, {
+        type: 'line',
+        data: {
+            labels: ['North', 'South', 'East', 'West'],
+            datasets: [{
+                label: 'Avg Delay (s)',
+                data: [0, 0, 0, 0],
+                borderColor: '#60a5fa',
+                backgroundColor: 'rgba(96, 165, 250, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.3
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { grid: { color: 'rgba(255, 255, 255, 0.05)' }, ticks: { color: '#9ca3af' } },
+                x: { ticks: { color: '#9ca3af' } }
+            }
+        }
+    });
+
+    // RL Training Chart
+    const ctxT = document.getElementById('chart-training').getContext('2d');
+    chartTraining = new Chart(ctxT, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Loss / Cumulative Reward',
+                data: [],
+                borderColor: '#c084fc',
+                backgroundColor: 'rgba(192, 132, 252, 0.05)',
+                borderWidth: 1.5,
+                pointRadius: 0,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { grid: { color: 'rgba(255, 255, 255, 0.03)' }, ticks: { color: '#9ca3af', font: { size: 8 } } },
+                x: { ticks: { color: '#9ca3af', font: { size: 8 } } }
+            }
+        }
+    });
+}
+
+function updateTelemetryCharts(state) {
+    if (!state) return;
+    
+    // Update queue values
+    chartQueues.data.datasets[0].data = [
+        state.lane_queues.north || 0,
+        state.lane_queues.south || 0,
+        state.lane_queues.east || 0,
+        state.lane_queues.west || 0
+    ];
+    chartQueues.update();
+    
+    // Update completed wait summary values
+    chartWaits.data.datasets[0].data = [
+        state.completed_wait_summary.north || 0,
+        state.completed_wait_summary.south || 0,
+        state.completed_wait_summary.east || 0,
+        state.completed_wait_summary.west || 0
+    ];
+    chartWaits.update();
+}
+
+function updateTrainingChart(labels, data) {
+    chartTraining.data.labels = labels;
+    chartTraining.data.datasets[0].data = data;
+    chartTraining.update();
+}
+
+async function updateTomTomCurveChart() {
+    const city = document.getElementById('city-select').value;
+    const res = await fetch(`/api/realworld-traffic/${city}`);
+    const data = await res.json();
+    console.log("TomTom curves fetched", data);
+}
