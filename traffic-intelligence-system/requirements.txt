@@ -1,0 +1,8 @@
+# Core library has zero external dependencies (pure Python standard library).
+# These are only needed for testing and the demo notebook.
+
+pytest>=7.4
+matplotlib>=3.7
+pandas>=2.0
+numpy>=1.24
+jupyter>=1.0

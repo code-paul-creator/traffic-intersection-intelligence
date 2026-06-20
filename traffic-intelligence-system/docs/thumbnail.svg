@@ -1,0 +1,88 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg">
+<defs>
+<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0%" stop-color="#0b1220"/>
+<stop offset="100%" stop-color="#15233b"/>
+</linearGradient>
+<linearGradient id="roadglow" x1="0" y1="0" x2="1" y2="0">
+<stop offset="0%" stop-color="#1a2332"/>
+<stop offset="50%" stop-color="#222e42"/>
+<stop offset="100%" stop-color="#1a2332"/>
+</linearGradient>
+</defs>
+
+<rect x="0" y="0" width="1280" height="720" fill="url(#sky)"/>
+
+<rect x="500" y="0" width="280" height="720" fill="url(#roadglow)"/>
+<rect x="0" y="290" width="1280" height="140" fill="url(#roadglow)"/>
+
+<g fill="#5b6b85">
+<rect x="635" y="450" width="10" height="40"/>
+<rect x="635" y="520" width="10" height="40"/>
+<rect x="635" y="590" width="10" height="40"/>
+<rect x="635" y="660" width="10" height="40"/>
+</g>
+<g fill="#5b6b85">
+<rect x="20" y="355" width="40" height="10"/>
+<rect x="90" y="355" width="40" height="10"/>
+<rect x="160" y="355" width="40" height="10"/>
+<rect x="230" y="355" width="40" height="10"/>
+<rect x="850" y="355" width="40" height="10"/>
+<rect x="920" y="355" width="40" height="10"/>
+<rect x="990" y="355" width="40" height="10"/>
+<rect x="1060" y="355" width="40" height="10"/>
+<rect x="1130" y="355" width="40" height="10"/>
+<rect x="1200" y="355" width="40" height="10"/>
+</g>
+
+<g fill="#3a4658">
+<rect x="500" y="240" width="20" height="50"/>
+<rect x="535" y="240" width="20" height="50"/>
+<rect x="570" y="240" width="20" height="50"/>
+<rect x="605" y="240" width="20" height="50"/>
+<rect x="640" y="240" width="20" height="50"/>
+<rect x="675" y="240" width="20" height="50"/>
+<rect x="710" y="240" width="20" height="50"/>
+<rect x="745" y="240" width="20" height="50"/>
+<rect x="780" y="240" width="20" height="50"/>
+</g>
+
+<g>
+<rect x="555" y="180" width="48" height="64" rx="8" fill="#e0653f"/>
+<rect x="675" y="180" width="48" height="64" rx="8" fill="#4f7fb8"/>
+<rect x="675" y="252" width="48" height="40" rx="8" fill="#caa24a"/>
+</g>
+
+<g>
+<rect x="40" y="305" width="80" height="40" rx="8" fill="#4f7fb8"/>
+<rect x="150" y="305" width="80" height="40" rx="8" fill="#caa24a"/>
+<rect x="900" y="305" width="80" height="40" rx="8" fill="#e0653f"/>
+<rect x="1080" y="305" width="80" height="40" rx="8" fill="#d7d9dd"/>
+</g>
+
+<g transform="translate(470,255)">
+<rect x="-6" y="0" width="12" height="50" fill="#2a3343"/>
+<rect x="-22" y="-58" width="44" height="64" rx="10" fill="#222b3a" stroke="#3a4658" stroke-width="1.5"/>
+<circle cx="0" cy="-42" r="9" fill="#3a2420"/>
+<circle cx="0" cy="-18" r="9" fill="#3a2420"/>
+<circle cx="0" cy="6" r="9" fill="#3a2420"/>
+<circle cx="0" cy="-42" r="11" fill="#ff4d4d"/>
+</g>
+
+<g transform="translate(810,235)">
+<rect x="-6" y="0" width="12" height="50" fill="#2a3343"/>
+<rect x="-22" y="-58" width="44" height="64" rx="10" fill="#222b3a" stroke="#3a4658" stroke-width="1.5"/>
+<circle cx="0" cy="-42" r="9" fill="#3a2420"/>
+<circle cx="0" cy="-18" r="9" fill="#3a2420"/>
+<circle cx="0" cy="6" r="9" fill="#3a2420"/>
+<circle cx="0" cy="6" r="11" fill="#4ddb7a"/>
+</g>
+
+<text x="640" y="70" text-anchor="middle" font-family="Arial, sans-serif" font-size="52" font-weight="700" fill="#ffffff">ADAPTIVE TRAFFIC AI</text>
+<text x="640" y="108" text-anchor="middle" font-family="Arial, sans-serif" font-size="24" font-weight="500" fill="#9fb3cf">Smart signals for Indian cities</text>
+
+<rect x="430" y="600" width="420" height="92" rx="14" fill="#101826" stroke="#2f3c52" stroke-width="2"/>
+<text x="640" y="638" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="500" fill="#c7d3e3">Busy-road wait time</text>
+<text x="640" y="678" text-anchor="middle" font-family="Arial, sans-serif" font-size="42" font-weight="700" fill="#4ddb7a">-9.7%</text>
+
+</svg>
